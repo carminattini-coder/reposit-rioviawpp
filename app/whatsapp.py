@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from twilio.rest import Client
 from app.config import settings
 

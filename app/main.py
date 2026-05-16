@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form
 from fastapi.responses import PlainTextResponse
 
 from app import rag, whatsapp
@@ -56,7 +56,10 @@ async def webhook(
     # --- Text question ---
     text = Body.strip()
     if text:
-        await _handle_question(phone, text)
+        try:
+            await _handle_question(phone, text)
+        except Exception as e:
+            logger.error("Erro ao responder pergunta: %s", e, exc_info=True)
 
     return PlainTextResponse("")
 
