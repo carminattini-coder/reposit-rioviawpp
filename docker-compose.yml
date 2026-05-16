@@ -1,4 +1,17 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolution-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bot-net
+
   evolution-api:
     image: atendai/evolution-api:v2.2.3
     container_name: evolution-api
@@ -9,12 +22,17 @@ services:
       SERVER_URL: http://localhost:8080
       AUTHENTICATION_TYPE: apikey
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
-      DATABASE_ENABLED: "false"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution123@postgres:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_client
       LOG_LEVEL: ERROR
       DEL_INSTANCE: "false"
       WEBHOOK_GLOBAL_ENABLED: "false"
     volumes:
       - evolution_data:/evolution/instances
+    depends_on:
+      - postgres
     networks:
       - bot-net
 
@@ -38,6 +56,7 @@ services:
 
 volumes:
   evolution_data:
+  postgres_data:
 
 networks:
   bot-net:
