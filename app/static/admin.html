@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Documentos</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f5; min-height: 100vh; }
+  header { background: #333; color: white; padding: 16px 24px; font-size: 18px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  header a { color: #aaa; font-size: 14px; text-decoration: none; }
+  main { max-width: 600px; margin: 40px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 24px; }
+  .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  h2 { font-size: 16px; color: #555; margin-bottom: 16px; text-transform: uppercase; letter-spacing: .5px; }
+  input[type=password], input[type=file] { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; margin-bottom: 12px; }
+  button { padding: 10px 24px; background: #333; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; width: 100%; }
+  button:hover { background: #111; }
+  #status { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 14px; display: none; }
+  .ok { background: #e6f4ea; color: #2d7a3a; }
+  .err { background: #fce8e6; color: #c5221f; }
+  #login-section { display: flex; flex-direction: column; gap: 0; }
+  #upload-section { display: none; }
+  #info { font-size: 14px; color: #666; }
+</style>
+</head>
+<body>
+<header>
+  Painel Admin
+  <a href="/">← Ver chat</a>
+</header>
+<main>
+  <div class="card" id="login-section">
+    <h2>Login</h2>
+    <input type="password" id="pwd" placeholder="Senha do admin">
+    <button onclick="login()">Entrar</button>
+    <div id="login-status" class="status"></div>
+  </div>
+
+  <div class="card" id="upload-section">
+    <h2>Enviar Documento</h2>
+    <input type="file" id="file" accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg">
+    <button onclick="upload()">Enviar e Indexar</button>
+    <div id="status"></div>
+    <p id="info"></p>
+  </div>
+</main>
+<script>
+  let token = sessionStorage.getItem('admin_token');
+  if (token) showUpload();
+
+  async function login() {
+    const pwd = document.getElementById('pwd').value;
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      token = data.token;
+      sessionStorage.setItem('admin_token', token);
+      showUpload();
+    } else {
+      const s = document.getElementById('login-status');
+      s.textContent = 'Senha incorreta.';
+      s.className = 'status err';
+      s.style.display = 'block';
+    }
+  }
+
+  function showUpload() {
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('upload-section').style.display = 'block';
+    loadInfo();
+  }
+
+  async function loadInfo() {
+    const res = await fetch('/api/admin/documents', { headers: { Authorization: 'Bearer ' + token } });
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('info').textContent = `Total de trechos indexados: ${data.total_chunks}`;
+    }
+  }
+
+  async function upload() {
+    const file = document.getElementById('file').files[0];
+    const status = document.getElementById('status');
+    if (!file) { status.textContent = 'Selecione um arquivo.'; status.className = 'status err'; status.style.display = 'block'; return; }
+
+    status.textContent = 'Processando...';
+    status.className = 'status ok';
+    status.style.display = 'block';
+
+    const form = new FormData();
+    form.append('file', file);
+
+    const res = await fetch('/api/admin/upload', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+      body: form
+    });
+    const data = await res.json();
+    if (res.ok) {
+      status.textContent = data.message;
+      status.className = 'status ok';
+      loadInfo();
+    } else {
+      status.textContent = data.detail || 'Erro ao enviar.';
+      status.className = 'status err';
+    }
+  }
+
+  document.getElementById('pwd')?.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+</script>
+</body>
+</html>

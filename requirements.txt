@@ -10,4 +10,3 @@ Pillow==11.0.0
 pytesseract==0.3.13
 httpx==0.28.0
 python-multipart==0.0.20
-twilio==9.3.6

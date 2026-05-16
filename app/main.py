@@ -1,96 +1,106 @@
+from __future__ import annotations
+
 import logging
+import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Form
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from app import rag, whatsapp
+from app import rag
+from app.config import settings
 from app.llm import answer_with_context
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-DOCUMENT_MIMES = {
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Carregando documentos da pasta /app/documents")
     count = rag.load_documents_folder()
-    total = rag.collection_count()
-    logger.info("Pré-carregados: %d novos chunks | %d total", count, total)
+    logger.info("Pré-carregados: %d chunks | total: %d", count, rag.collection_count())
     yield
 
 
-app = FastAPI(title="WhatsApp Document Q&A", lifespan=lifespan)
+app = FastAPI(title="Document Q&A", lifespan=lifespan)
+
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ── Public routes ──────────────────────────────────────────────────────────────
+
+@app.get("/")
+async def index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/admin")
+async def admin_page():
+    return FileResponse(STATIC_DIR / "admin.html")
+
+
+class AskRequest(BaseModel):
+    question: str
+
+
+@app.post("/api/ask")
+async def ask(body: AskRequest):
+    if not body.question.strip():
+        raise HTTPException(status_code=400, detail="Pergunta vazia")
+    chunks = rag.retrieve(body.question)
+    answer = answer_with_context(body.question, chunks)
+    return {"answer": answer}
+
+
+# ── Admin routes ───────────────────────────────────────────────────────────────
+
+def _check_auth(authorization: str | None):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Não autorizado")
+    token = authorization.removeprefix("Bearer ")
+    if not secrets.compare_digest(token, settings.admin_password):
+        raise HTTPException(status_code=401, detail="Senha incorreta")
+
+
+@app.post("/api/admin/login")
+async def login(body: dict):
+    password = body.get("password", "")
+    if not secrets.compare_digest(password, settings.admin_password):
+        raise HTTPException(status_code=401, detail="Senha incorreta")
+    return {"token": settings.admin_password}
+
+
+@app.post("/api/admin/upload")
+async def upload(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+):
+    _check_auth(authorization)
+
+    data = await file.read()
+    mime = file.content_type or "application/octet-stream"
+    filename = file.filename or "documento"
+
+    try:
+        chunks = rag.ingest_bytes(data, mime, filename)
+        return {"message": f"'{filename}' indexado com {chunks} trechos.", "total": rag.collection_count()}
+    except Exception as e:
+        logger.error("Erro ao indexar %s: %s", filename, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/documents")
+async def list_documents(authorization: str | None = Header(default=None)):
+    _check_auth(authorization)
+    count = rag.collection_count()
+    return {"total_chunks": count}
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "chunks_indexed": rag.collection_count()}
-
-
-@app.post("/webhook")
-async def webhook(
-    From: str = Form(...),
-    Body: str = Form(default=""),
-    NumMedia: int = Form(default=0),
-    MediaUrl0: str = Form(default=""),
-    MediaContentType0: str = Form(default=""),
-):
-    phone = From  # e.g. whatsapp:+5511999999999
-
-    # --- Document received ---
-    if NumMedia > 0 and MediaUrl0 and _is_document(MediaContentType0):
-        await _handle_document(phone, MediaUrl0, MediaContentType0)
-        return PlainTextResponse("")
-
-    # --- Text question ---
-    text = Body.strip()
-    if text:
-        try:
-            await _handle_question(phone, text)
-        except Exception as e:
-            logger.error("Erro ao responder pergunta: %s", e, exc_info=True)
-
-    return PlainTextResponse("")
-
-
-def _is_document(mime: str) -> bool:
-    return mime in DOCUMENT_MIMES or any(
-        t in mime for t in ("pdf", "word", "officedocument", "text/plain", "image")
-    )
-
-
-async def _handle_document(phone: str, media_url: str, mime: str):
-    file_name = media_url.split("/")[-1] or "documento"
-    whatsapp.send_text(phone, f"Recebi o documento. Processando, aguarde...")
-    try:
-        data = whatsapp.download_media(media_url)
-        chunks_added = rag.ingest_bytes(data, mime, file_name)
-        total = rag.collection_count()
-        whatsapp.send_text(
-            phone,
-            f"Documento indexado!\n"
-            f"Trechos extraídos: {chunks_added}\n"
-            f"Total no banco: {total}\n\n"
-            "Agora pode fazer perguntas sobre ele.",
-        )
-    except Exception as e:
-        logger.error("Erro ao processar documento: %s", e)
-        whatsapp.send_text(phone, "Erro ao processar o documento. Tente novamente.")
-
-
-async def _handle_question(phone: str, question: str):
-    logger.info("Pergunta de %s: %s", phone, question[:80])
-    chunks = rag.retrieve(question)
-    answer = answer_with_context(question, chunks)
-    whatsapp.send_text(phone, answer)
