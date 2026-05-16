@@ -41,6 +41,9 @@ services:
       WEBHOOK_GLOBAL_ENABLED: "false"
     volumes:
       - evolution_data:/evolution/instances
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       - postgres
       - redis
@@ -72,3 +75,5 @@ volumes:
 networks:
   bot-net:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "true"
