@@ -10,9 +10,9 @@ class Settings(BaseSettings):
 
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
     claude_model: str = "claude-sonnet-4-6"
-    chunk_size: int = 800
-    chunk_overlap: int = 100
-    retrieval_k: int = 5
+    chunk_size: int = 1200
+    chunk_overlap: int = 200
+    retrieval_k: int = 15
 
     class Config:
         env_file = ".env"
