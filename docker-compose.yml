@@ -76,4 +76,4 @@ networks:
   bot-net:
     driver: bridge
     driver_opts:
-      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.driver.mtu: "1400"
