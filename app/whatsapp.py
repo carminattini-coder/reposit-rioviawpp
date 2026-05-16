@@ -1,36 +1,33 @@
-import logging
-
-import httpx
-
+from twilio.rest import Client
 from app.config import settings
 
-logger = logging.getLogger(__name__)
-
-HEADERS = {"apikey": settings.evolution_api_key, "Content-Type": "application/json"}
-BASE_URL = settings.evolution_api_url.rstrip("/")
-INSTANCE = settings.evolution_instance
+_client: Client | None = None
 
 
-async def send_text(phone: str, text: str) -> None:
-    url = f"{BASE_URL}/message/sendText/{INSTANCE}"
-    payload = {"number": phone, "text": text}
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, json=payload, headers=HEADERS)
-        if resp.status_code >= 400:
-            logger.error("Erro ao enviar mensagem: %s %s", resp.status_code, resp.text)
+def _get_client() -> Client:
+    global _client
+    if _client is None:
+        _client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+    return _client
 
 
-async def download_media(media_url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(media_url, headers=HEADERS)
+def send_text(to: str, text: str) -> None:
+    # Split messages longer than 1600 chars (Twilio limit)
+    chunks = [text[i:i+1600] for i in range(0, len(text), 1600)]
+    client = _get_client()
+    for chunk in chunks:
+        client.messages.create(
+            from_=settings.twilio_whatsapp_number,
+            to=to,
+            body=chunk,
+        )
+
+
+def download_media(media_url: str) -> bytes:
+    import httpx
+    client = _get_client()
+    # Twilio media requires auth
+    with httpx.Client(auth=(settings.twilio_account_sid, settings.twilio_auth_token)) as http:
+        resp = http.get(media_url)
         resp.raise_for_status()
         return resp.content
-
-
-async def get_media_base64(message_id: str) -> dict:
-    url = f"{BASE_URL}/chat/getBase64FromMediaMessage/{INSTANCE}"
-    payload = {"message": {"key": {"id": message_id}}, "convertToMp4": False}
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        return resp.json()

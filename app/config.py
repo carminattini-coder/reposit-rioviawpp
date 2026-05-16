@@ -3,9 +3,9 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     anthropic_api_key: str
-    evolution_api_url: str = "http://evolution-api:8080"
-    evolution_api_key: str
-    evolution_instance: str = "whatsapp-bot"
+    twilio_account_sid: str
+    twilio_auth_token: str
+    twilio_whatsapp_number: str = "whatsapp:+14155238886"  # sandbox number
 
     chroma_db_path: str = "/app/chroma_db"
     documents_path: str = "/app/documents"

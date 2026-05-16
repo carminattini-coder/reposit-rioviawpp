@@ -1,55 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: evolution-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: evolution
-      POSTGRES_USER: evolution
-      POSTGRES_PASSWORD: evolution123
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - bot-net
-
-  redis:
-    image: redis:7-alpine
-    container_name: evolution-redis
-    restart: unless-stopped
-    networks:
-      - bot-net
-
-  evolution-api:
-    image: atendai/evolution-api:v2.2.3
-    container_name: evolution-api
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      SERVER_URL: http://localhost:8080
-      AUTHENTICATION_TYPE: apikey
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
-      DATABASE_ENABLED: "true"
-      DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://evolution:evolution123@postgres:5432/evolution
-      DATABASE_CONNECTION_CLIENT_NAME: evolution_client
-      CACHE_REDIS_ENABLED: "true"
-      CACHE_REDIS_URI: redis://redis:6379
-      CACHE_REDIS_PREFIX_KEY: evolution
-      LOG_LEVEL: ERROR
-      DEL_INSTANCE: "false"
-      WEBHOOK_GLOBAL_ENABLED: "false"
-    volumes:
-      - evolution_data:/evolution/instances
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - bot-net
-
   bot:
     build: .
     container_name: whatsapp-bot
@@ -58,22 +7,8 @@ services:
       - "3000:3000"
     env_file:
       - .env
-    environment:
-      EVOLUTION_API_URL: http://evolution-api:8080
     volumes:
       - ./documents:/app/documents
       - ./chroma_db:/app/chroma_db
-    depends_on:
-      - evolution-api
-    networks:
-      - bot-net
 
-volumes:
-  evolution_data:
-  postgres_data:
-
-networks:
-  bot-net:
-    driver: bridge
-    driver_opts:
-      com.docker.network.driver.mtu: "1400"
+volumes: {}
